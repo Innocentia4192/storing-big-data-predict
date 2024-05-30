@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create a VPC, Subnet, and associated resources for the DE-Extract scenario.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: DE-Extract
+    Description: A string that will be prefixed onto each resource created in the template.
+  VpcCIDR:
+    Type: String
+    Default: 192.168.0.0/16
+    Description: The IPv4 address space for the VPC.
+  DataCenterPublicSubnetCIDR:
+    Type: String
+    Default: 192.168.10.0/24
+    Description: The IPv4 address space for the public subnet.
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  DataCenterPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref DataCenterPublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: DE-Extract Data Center Subnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: DE-Extract Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  DataCenterPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataCenterPublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  WindowsInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DE-Extract-WindowsInstanceSG
+      GroupDescription: Allow RDP access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: DE-Extract-WindowsInstanceSG
+
+  FileServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DE-Extract-FileServerSG
+      GroupDescription: Allow SSH access within VPC
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 192.168.10.0/24
+      Tags:
+        - Key: Name
+          Value: DE-Extract-FileServerSG
+
+  FileGatewaySG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DE-Extract-FileGatewaySG
+      GroupDescription: Allow all traffic within VPC
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1
+          ToPort: 65534
+          CidrIp: 192.168.0.0/16
+      Tags:
+        - Key: Name
+          Value: DE-Extract-FileGatewaySG
